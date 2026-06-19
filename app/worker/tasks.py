@@ -2,6 +2,7 @@ from app.worker.celery_app import celery_app
 
 from app.db.database import SessionLocal
 from app.models.job import Job
+from app.models.transaction import Transaction
 
 import pandas as pd
 
@@ -27,6 +28,23 @@ def process_csv(job_id: int):
         df = pd.read_csv(file_path)
 
         total_rows = len(df)
+
+        for _, row in df.iterrows():
+            transaction = Transaction(
+                job_id = job.id,
+                txn_id=str(row.get("txn_id")),
+                date=str(row.get("date")),
+                merchant=str(row.get("merchant")),
+                amount=float(row.get("amount", 0))
+                if pd.notna(row.get("amount"))
+                else 0,
+                currency=str(row.get("currency")),
+                status=str(row.get("status")),
+                category=str(row.get("category")),
+                account_id=str(row.get("account_id")),
+                is_anomaly=False
+            )
+            db.add(transaction)
 
         # update counts
         job.row_count_raw = total_rows

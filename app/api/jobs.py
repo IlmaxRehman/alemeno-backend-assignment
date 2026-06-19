@@ -10,6 +10,8 @@ from app.worker.tasks import process_csv
 
 router = APIRouter()
 
+
+
 @router.post("/upload")
 async def upload_csv(file: UploadFile = File(...),
                       db: Session = Depends(get_db)):
@@ -39,4 +41,45 @@ async def upload_csv(file: UploadFile = File(...),
     return {
         "job_id": job.id,
         "status": job.status
+    }
+
+
+@router.get("/")
+def list_jobs(
+    db: Session = Depends(get_db)
+):
+    jobs = db.query(Job).all()
+
+    return [
+        {
+            "job_id": job.id,
+            "file_name": job.file_name,
+            "status": job.status,
+            "row_count_raw": job.row_count_raw,
+            "row_count_clean": job.row_count_clean,
+            "created_at": job.created_at,
+            "error_message": job.error_message
+        }
+        for job in jobs
+    ]
+
+@router.get("/{job_id}/status")
+def get_job_status(
+    job_id: int,
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if not job:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found"
+        )
+
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "row_count_raw": job.row_count_raw,
+        "row_count_clean": job.row_count_clean,
+        "error_message": job.error_message
     }
