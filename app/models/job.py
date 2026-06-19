@@ -1,11 +1,18 @@
 from sqlalchemy import Column, Integer, String, DateTime
 from sqlalchemy.sql import func
+
 from app.db.database import Base
+
 
 class Job(Base):
     __tablename__ = "jobs"
 
-    id = Column(Integer, primary_key = True, index = True)
+    id = Column(Integer, primary_key=True, index=True)
+
+    file_name = Column(
+        String,
+        nullable=False
+    )
 
     status = Column(
         String,
@@ -13,12 +20,27 @@ class Job(Base):
         default="pending"
     )
 
-    file_name = Column(
+    row_count_raw = Column(
+        Integer,
+        nullable=True
+    )
+
+    row_count_clean = Column(
+        Integer,
+        nullable=True
+    )
+
+    error_message = Column(
         String,
-        nullable=False
+        nullable=True
     )
 
     created_at = Column(
         DateTime(timezone=True),
-        server_default=func.now() 
+        server_default=func.now()
+    )
+
+    completed_at = Column(
+        DateTime(timezone=True),
+        nullable=True
     )

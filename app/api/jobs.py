@@ -6,6 +6,7 @@ from fastapi import Depends
 
 from app.db.dependencies import get_db
 from app.models.job import Job
+from app.worker.tasks import process_csv
 
 router = APIRouter()
 
@@ -33,6 +34,7 @@ async def upload_csv(file: UploadFile = File(...),
     db.add(job)
     db.commit()
     db.refresh(job)
+    process_csv.delay(job.id)
 
     return {
         "job_id": job.id,
