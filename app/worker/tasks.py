@@ -30,21 +30,27 @@ def process_csv(job_id: int):
         total_rows = len(df)
 
         for _, row in df.iterrows():
-            transaction = Transaction(
-                job_id = job.id,
-                txn_id=str(row.get("txn_id")),
-                date=str(row.get("date")),
-                merchant=str(row.get("merchant")),
-                amount=float(row.get("amount", 0))
-                if pd.notna(row.get("amount"))
-                else 0,
-                currency=str(row.get("currency")),
-                status=str(row.get("status")),
-                category=str(row.get("category")),
-                account_id=str(row.get("account_id")),
-                is_anomaly=False
-            )
-            db.add(transaction)
+
+              amount_value = row.get("amount")
+
+              if pd.isna(amount_value):
+                  amount_value = 0
+              else:
+                  amount_value = str(amount_value).replace("$", "").strip()
+              transaction = Transaction(
+                 job_id=job.id,
+                 txn_id=str(row.get("txn_id")),
+                 date=str(row.get("date")),
+                 merchant=str(row.get("merchant")),
+                 amount=float(amount_value),
+                 currency=str(row.get("currency")),
+                 status=str(row.get("status")),
+                 category=str(row.get("category")),
+                 account_id=str(row.get("account_id")),
+                 is_anomaly=False
+           )
+        
+              db.add(transaction)
 
         # update counts
         job.row_count_raw = total_rows
