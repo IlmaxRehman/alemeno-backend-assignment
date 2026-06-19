@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine
 from sqlaichemy.orm import declarative_base, sessionmaker
+from app.core.config import DATABASE_URL
 
-DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/alemeno"
 
 engine = create_engine(DATABASE_URL)
 
