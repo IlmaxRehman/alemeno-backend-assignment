@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-from sqlaichemy.orm import declarative_base, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 from app.core.config import DATABASE_URL
 
 
