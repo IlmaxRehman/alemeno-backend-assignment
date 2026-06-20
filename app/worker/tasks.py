@@ -221,8 +221,8 @@ def process_csv(job_id: int):
 
             transaction = Transaction(
                 job_id=job.id,
-                txn_id=str(row.get("txn_id")),
-                date=str(row.get("date")),
+                txn_id=None if pd.isna(row.get("txn_id")) else str(row.get("txn_id")),
+                date=None if pd.isna(row.get("date")) else str(row.get("date")),
                 merchant=str(row.get("merchant")),
                 amount=float(row.get("amount")),
                 currency=str(row.get("currency")),
