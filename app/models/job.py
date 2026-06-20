@@ -35,6 +35,16 @@ class Job(Base):
         nullable=True
     )
 
+    summary = Column(
+        String,
+        nullable=True
+    )
+
+    risk_level = Column(
+        String,
+        nullable=True
+    )
+
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now()

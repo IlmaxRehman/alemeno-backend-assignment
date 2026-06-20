@@ -4,6 +4,11 @@ from app.db.database import SessionLocal
 from app.models.job import Job
 from app.models.transaction import Transaction
 
+from app.services.gemini_service import (
+    classify_missing_categories,
+    generate_summary
+)
+
 import pandas as pd
 
 
@@ -18,30 +23,27 @@ def process_csv(job_id: int):
         if not job:
             return
 
-        # mark processing
         job.status = "processing"
         db.commit()
 
-        # read uploaded csv
         file_path = f"uploads/{job.file_name}"
 
         df = pd.read_csv(file_path)
 
         total_rows = len(df)
 
-        # Remove exact duplicate rows
+        # Data Cleaning
+
         df = df.drop_duplicates()
 
-        # Fill missing categories
+        missing_category_mask = df["category"].isna()
+
         df["category"] = df["category"].fillna("Uncategorised")
 
-        # Normalize status
         df["status"] = df["status"].astype(str).str.upper()
 
-        # Normalize currency
         df["currency"] = df["currency"].astype(str).str.upper()
 
-        # Clean amount column
         df["amount"] = pd.to_numeric(
             df["amount"]
             .astype(str)
@@ -49,22 +51,84 @@ def process_csv(job_id: int):
             errors="coerce"
         ).fillna(0)
 
-        # Normalize dates to ISO format
         df["date"] = pd.to_datetime(
             df["date"],
             errors="coerce",
             dayfirst=True
         ).dt.strftime("%Y-%m-%d")
 
-        # -----------------------------
+        # Gemini Category Classification
+
+        missing_rows = df[missing_category_mask]
+
+        if len(missing_rows) > 0:
+
+            payload = []
+
+            for _, row in missing_rows.iterrows():
+
+                payload.append(
+                    {
+                        "merchant": str(row["merchant"]),
+                        "notes": str(row.get("notes", ""))
+                    }
+                )
+
+            llm_result = classify_missing_categories(payload)
+
+            if llm_result:
+
+                for index, category_result in zip(
+                    missing_rows.index,
+                    llm_result
+                ):
+                    df.loc[index, "category"] = category_result.get(
+                        "category",
+                        "Other"
+                    )
+
+            else:
+
+                # Fallback Classification
+
+                for index, row in missing_rows.iterrows():
+
+                    merchant = str(row["merchant"]).lower()
+
+                    if "swiggy" in merchant:
+                        df.loc[index, "category"] = "Food"
+
+                    elif "zomato" in merchant:
+                        df.loc[index, "category"] = "Food"
+
+                    elif "ola" in merchant:
+                        df.loc[index, "category"] = "Transport"
+
+                    elif "uber" in merchant:
+                        df.loc[index, "category"] = "Transport"
+
+                    elif "irctc" in merchant:
+                        df.loc[index, "category"] = "Travel"
+
+                    elif "amazon" in merchant:
+                        df.loc[index, "category"] = "Shopping"
+
+                    elif "flipkart" in merchant:
+                        df.loc[index, "category"] = "Shopping"
+
+                    else:
+                        df.loc[index, "category"] = "Other"
+
         # Anomaly Detection
-        # -----------------------------
 
-        # Account median amount
-        account_median = df.groupby("account_id")["amount"].transform("median")
+        account_median = (
+            df.groupby("account_id")["amount"]
+            .transform("median")
+        )
 
-        # Rule 1: amount > 3x account median
-        df["is_anomaly"] = df["amount"] > (3 * account_median)
+        df["is_anomaly"] = (
+            df["amount"] > (3 * account_median)
+        )
 
         df["anomaly_reason"] = None
 
@@ -73,8 +137,11 @@ def process_csv(job_id: int):
             "anomaly_reason"
         ] = "Amount exceeds 3x account median"
 
-        # Rule 2: USD with domestic merchants
-        domestic_merchants = ["Swiggy", "Ola", "IRCTC"]
+        domestic_merchants = [
+            "Swiggy",
+            "Ola",
+            "IRCTC"
+        ]
 
         currency_anomaly = (
             (df["currency"] == "USD")
@@ -82,16 +149,73 @@ def process_csv(job_id: int):
             (df["merchant"].isin(domestic_merchants))
         )
 
-        df.loc[currency_anomaly, "is_anomaly"] = True
+        df.loc[
+            currency_anomaly,
+            "is_anomaly"
+        ] = True
 
         df.loc[
             currency_anomaly,
             "anomaly_reason"
         ] = "USD transaction with domestic merchant"
 
-        # -----------------------------
-        # Store transactions
-        # -----------------------------
+        # Gemini Narrative Summary
+
+        merchant_totals = (
+            df.groupby("merchant")["amount"]
+            .sum()
+            .sort_values(ascending=False)
+            .head(3)
+        )
+
+        summary_input = {
+            "total_spend_inr": float(
+                df[df["currency"] == "INR"]["amount"].sum()
+            ),
+            "total_spend_usd": float(
+                df[df["currency"] == "USD"]["amount"].sum()
+            ),
+            "top_merchants": merchant_totals.index.tolist(),
+            "anomaly_count": int(
+                df["is_anomaly"].sum()
+            )
+        }
+
+        summary_result = generate_summary(
+            summary_input
+        )
+
+        if summary_result:
+
+            job.summary = summary_result.get(
+                "narrative"
+            )
+
+            job.risk_level = summary_result.get(
+                "risk_level"
+            )
+
+        else:
+
+            anomaly_count = int(
+                df["is_anomaly"].sum()
+            )
+
+            job.summary = (
+                f"Processed {len(df)} transactions. "
+                f"Detected {anomaly_count} anomalies. "
+                f"Fallback summary generated because "
+                f"LLM was unavailable."
+            )
+
+            if anomaly_count >= 5:
+                job.risk_level = "high"
+            elif anomaly_count >= 2:
+                job.risk_level = "medium"
+            else:
+                job.risk_level = "low"
+
+        # Store Transactions
 
         for _, row in df.iterrows():
 
@@ -111,11 +235,9 @@ def process_csv(job_id: int):
 
             db.add(transaction)
 
-        # update counts
         job.row_count_raw = total_rows
         job.row_count_clean = len(df)
 
-        # mark completed
         job.status = "completed"
 
         db.commit()
